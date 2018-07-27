@@ -1,0 +1,26 @@
+version: '2'
+services:
+  pgus:
+    image: postgres:10-alpine
+    container_name: pgus
+    ports:
+      - "5501:5432"
+    environment:
+      POSTGRES_USER: obert-us
+      POSTGRES_PASSWORD: trebo-us
+  pguk:
+    image: postgres:10-alpine
+    container_name: pguk
+    ports:
+      - "5502:5432"
+    environment:
+      POSTGRES_USER: obert-uk
+      POSTGRES_PASSWORD: trebo-uk
+  pgau:
+    image: postgres:10-alpine
+    container_name: pgau
+    ports:
+      - "5503:5432"
+    environment:
+      POSTGRES_USER: obert-au
+      POSTGRES_PASSWORD: trebo-au
