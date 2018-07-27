@@ -94,6 +94,75 @@ select * from aus.identity_details;
 ```
 
 
+### Aftermath
+
+If you re-run the original statement, you'll see the USA and GBR people
+are updated, but a new duplicate of the third person is created.
+
+# Getting more data
+
+Let's get a bunch of people and build a few manager hierarchies.
+
+```
+select * from util.generate_identities(1, 10000, false);
+```
+
+The results show you how many people you generated in each region.
+Now let's make hierarchies.
+
+```
+select * from util.create_manager_tree(15);
+```
+
+This will select a random non-managed identity, and build a org structure
+under them with 15 levels of depth. Each level of depth gets that many
+employees under the selected random manager. The result is the top
+manager's UUID.
+
+### Queries on that hierarchy
+
+Let's search for all people under that person.
+
+```
+WITH targets AS (
+    SELECT
+      i.*
+    FROM shared.hierarchy t
+      INNER JOIN shared.hierarchy i ON i.path[t.depth] = t.uuid
+    WHERE t.uuid = '__ROOT_PERSON_UUID_HERE__' :: UUID
+), qualified AS (
+    SELECT
+      d.name,
+      t.*
+    FROM shared.identity_details d
+      LEFT JOIN targets t on t.uuid = d.uuid
+    WHERE d.uuid in ((
+      SELECT t2.uuid FROM targets t2
+    ))
+), upline AS (
+  select
+    c.uuid,
+    array_agg(q.name ORDER BY q.depth) as upline
+  from qualified c
+    LEFT JOIN qualified q ON c.path @> array[q.uuid]
+  WHERE c.manager_uuid IS NOT NULL
+  GROUP BY c.uuid
+)
+select q.name, q.uuid, q.depth, q.region,
+  m.name as manager, m.uuid as manager_uuid, m.region as manager_region,
+  u.upline
+from qualified q
+  LEFT JOIN qualified m on m.uuid = q.manager_uuid
+  LEFT JOIN upline u on u.uuid = q.uuid
+-- WHERE q.region in ('usa', 'gbr')
+ORDER BY q.depth;
+```
+
+Notice we do end up pulling cross region names, but only after identifying
+our potential pool of people. In this example we want to show ALL names
+up the hierarchy, but in most cases where you don't need that, you could
+filter out PII once your targets are identified and reduce the number of
+regions hit.
 
 # Take aways
 
@@ -107,3 +176,44 @@ There's more logic in the DB than I'd like, but again with PG 11
 that will (hopefully) be unnecessary.
 
 
+
+
+# Hierarchical resolution
+
+One of the major things to solve with this is issues with hierarchy. So let's
+generate a big list of people and then sort through them.
+
+```
+WITH targets AS (
+    SELECT
+      i.*
+    FROM shared.hierarchy t
+      INNER JOIN shared.hierarchy i ON i.path[t.depth] = t.uuid
+    WHERE t.uuid = '09a06d2e-a2e3-49a1-b3b6-a8a520fafc6c' :: UUID
+), qualified AS (
+    SELECT
+      d.name,
+      t.*
+    FROM shared.identity_details d
+      LEFT JOIN targets t on t.uuid = d.uuid
+    WHERE d.uuid in ((
+      SELECT t2.uuid FROM targets t2
+    ))
+), upline AS (
+  select
+    c.uuid,
+    array_agg(q.name ORDER BY q.depth) as upline
+  from qualified c
+    LEFT JOIN qualified q ON c.path @> array[q.uuid]
+  WHERE c.manager_uuid IS NOT NULL
+  GROUP BY c.uuid
+)
+select q.name, q.uuid, q.depth, q.region,
+  m.name as manager, m.uuid as manager_uuid, m.region as manager_region,
+  u.upline
+from qualified q
+  LEFT JOIN qualified m on m.uuid = q.manager_uuid
+  LEFT JOIN upline u on u.uuid = q.uuid
+WHERE q.region in ('usa', 'gbr')
+ORDER BY q.depth;
+```
