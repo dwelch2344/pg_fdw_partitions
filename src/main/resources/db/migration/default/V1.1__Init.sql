@@ -1,6 +1,10 @@
 create extension if not exists "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS postgres_fdw;
 
+DROP SCHEMA IF EXISTS shared, util cascade;
+DROP SERVER IF EXISTS ${remote1ns} cascade;
+DROP SERVER IF EXISTS ${remote2ns} cascade;
+
 -- drop schema if exists shared, usa, gbr, aus cascade;
 
 create schema if not exists shared;
