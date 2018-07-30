@@ -12,7 +12,9 @@ CREATE FOREIGN TABLE ${remote1ns}.identity_details
 SERVER ${remote1ns};
 CREATE FOREIGN TABLE ${remote1ns}.identity (
   uuid   UUID NOT NULL,
+  customer_uuid UUID NOT NULL,
   region CHAR(3) NOT NULL,
+  gender VARCHAR,
   note   TEXT,
   created_on TIMESTAMP NOT NULL
 )
@@ -31,7 +33,9 @@ CREATE FOREIGN TABLE ${remote2ns}.identity_details
 SERVER ${remote2ns};
 CREATE FOREIGN TABLE ${remote2ns}.identity (
   uuid   UUID NOT NULL,
+  customer_uuid UUID NOT NULL,
   region CHAR(3) NOT NULL,
+  gender VARCHAR,
   note   TEXT,
   created_on TIMESTAMP NOT NULL
 )

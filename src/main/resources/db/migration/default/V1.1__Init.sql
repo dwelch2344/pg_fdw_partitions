@@ -6,9 +6,11 @@ CREATE EXTENSION IF NOT EXISTS postgres_fdw;
 create schema if not exists shared;
 create table if not exists shared.identity (
   uuid   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  customer_uuid UUID NOT NULL,
   manager_uuid   UUID NULL REFERENCES shared.identity(uuid)
     CHECK (manager_uuid is not null OR uuid != manager_uuid),
   region CHAR(3) NOT NULL,
+  gender VARCHAR,
   note   TEXT,
   created_on TIMESTAMP NOT NULL DEFAULT transaction_timestamp()
 );
@@ -19,8 +21,10 @@ create table if not exists shared.identity (
 create table if not exists shared.identity_details (
   id     SERIAL,
   uuid   UUID    NOT NULL,
+  customer_uuid UUID NOT NULL,
   region CHAR(3) NOT NULL,
-  name   VARCHAR NOT NULL
+  name   VARCHAR NOT NULL,
+  email  VARCHAR
 )
   PARTITION BY LIST (region);
 create schema if not exists ${localNs};
