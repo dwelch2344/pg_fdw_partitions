@@ -11,8 +11,7 @@ create schema if not exists shared;
 create table if not exists shared.identity (
   uuid   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   customer_uuid UUID NOT NULL,
-  manager_uuid   UUID NULL REFERENCES shared.identity(uuid)
-    CHECK (manager_uuid is not null OR uuid != manager_uuid),
+  manager_uuid   UUID NULL CHECK (manager_uuid is not null OR uuid != manager_uuid),
   region CHAR(3) NOT NULL,
   gender VARCHAR,
   note   TEXT,
@@ -34,3 +33,13 @@ create table if not exists shared.identity_details (
 create schema if not exists ${localNs};
 create table if not exists ${localNs}.identity_details
   partition of shared.identity_details for values in ('${localNs}');
+
+
+
+
+create table if not exists ${localNs}.trigger_cache (
+  uuid UUID PRIMARY KEY default uuid_generate_v4(),
+  all_data JSONB NOT NULL,
+  local_data JSONB NOT NULL,
+  created_on TIMESTAMP NOT NULL DEFAULT transaction_timestamp()
+);

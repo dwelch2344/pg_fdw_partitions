@@ -19,6 +19,13 @@ CREATE FOREIGN TABLE ${remote1ns}.identity (
   created_on TIMESTAMP NOT NULL
 )
 SERVER ${remote1ns} OPTIONS ( table_name 'identity', schema_name 'shared');
+CREATE FOREIGN TABLE ${remote1ns}.trigger_cache (
+  uuid UUID,
+  all_data JSONB NOT NULL,
+  local_data JSONB NOT NULL,
+  created_on TIMESTAMP NOT NULL DEFAULT transaction_timestamp()
+)
+SERVER ${remote1ns} OPTIONS ( table_name 'trigger_cache', schema_name '${remote1ns}');
 
 -- create remote 2
 CREATE SERVER IF NOT EXISTS ${remote2ns}
@@ -40,3 +47,10 @@ CREATE FOREIGN TABLE ${remote2ns}.identity (
   created_on TIMESTAMP NOT NULL
 )
 SERVER ${remote2ns} OPTIONS ( table_name 'identity', schema_name 'shared');
+CREATE FOREIGN TABLE ${remote2ns}.trigger_cache (
+  uuid UUID,
+  all_data JSONB NOT NULL,
+  local_data JSONB NOT NULL,
+  created_on TIMESTAMP NOT NULL DEFAULT transaction_timestamp()
+)
+SERVER ${remote2ns} OPTIONS ( table_name 'trigger_cache', schema_name '${remote2ns}');
