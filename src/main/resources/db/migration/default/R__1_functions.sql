@@ -231,12 +231,83 @@ SECURITY DEFINER;
 
 
 
+
+
+select *
+from shared.hierarchy
+where manager_uuid is not null;
+
+WITH targets AS (
+    SELECT i.*
+    FROM shared.hierarchy t
+      --       LEFT JOIN shared.identity_details d on d.uuid = t.uuid
+      INNER JOIN shared.hierarchy i ON i.path [t.depth] = t.uuid
+    WHERE t.uuid = (:target_uuid) :: UUID
+), grouping AS (
+  select
+    array_agg(t.uuid) filter (where t.region = 'usa') as usa,
+    array_agg(t.uuid) filter (where t.region = 'gbr') as gbr,
+    array_agg(t.uuid) filter (where t.region = 'aus') as aus
+  from targets t
+), usas as (
+    select usa.*
+    from grouping g
+      left join usa.identity_details usa on usa.uuid = any (g.usa)
+), gbrs as (
+    select gbr.*
+    from grouping g
+      left join gbr.identity_details gbr on gbr.uuid = any (g.gbr)
+)
+select * from usas
+union
+select * from gbrs
+;
+
+;
+
+  ), qualified AS (
+      SELECT
+        d.name,
+        t.*
+      FROM targets t
+        LEFT JOIN shared.identity_details d on t.uuid = d.uuid
+      WHERE d.uuid in ((
+        SELECT t2.uuid
+        FROM targets t2
+      ))
+  --   ) select * from qualified;
+), upline AS (
+    select
+      c.uuid,
+      array_agg(q.name ORDER BY q.depth) as upline
+    from targets c
+      LEFT JOIN targets q ON c.path @> array[q.uuid]
+    WHERE c.manager_uuid IS NOT NULL
+    GROUP BY c.uuid
+)
+select q.name, q.uuid, q.depth, q.region, m.region = q.region as local_manager,
+                                          m.name as manager, m.uuid as manager_uuid, m.region as manager_region,
+                                          array_to_string(u.upline, ' > ' ) upline
+from qualified q
+  LEFT JOIN qualified m on m.uuid = q.manager_uuid
+  LEFT JOIN upline u on u.uuid = q.uuid
+WHERE TRUE
+      --       AND q.region in ('usa', 'gbr')
+      --       AND q.name ilike '%7%'
+      AND m.region != q.region
+ORDER BY q.depth;
+
+
+
+
+-- select * from util.create_manager_tree(3);
 DROP FUNCTION IF EXISTS util.create_manager_tree(BIGINT);
-DROP FUNCTION IF EXISTS util.create_manager_tree(BIGINT, JSONB);
 CREATE OR REPLACE FUNCTION util.create_manager_tree(p_depth BIGINT)
   RETURNS TABLE(root UUID, stats JSONB) AS $$
 DECLARE
   v_root UUID;
+  v_pool_ids UUID[];
+  v_pool shared.identity_details[] := '{}';
   v_current UUID;
   v_update JSONB;
   v_row JSONB;
@@ -249,29 +320,47 @@ BEGIN
   INTO v_root
   ;
 
+  raise warning 'Selected root: %', v_root;
+
   -- fail if empty
 
   v_update = '[]'::JSONB;
   v_current := v_root;
 
-  FOR idx IN 1..p_depth LOOP
-    WITH targets as (
-      SELECT i.*
+  WITH targets as (
+      SELECT i.uuid
       FROM shared.identity i
-      WHERE i.manager_uuid IS NULL
-        AND i.uuid != v_root
-        AND i.uuid not in ((
-          select (u->>'uuid')::UUID
-          from jsonb_array_elements(v_update) u
-        ))
+      WHERE i.manager_uuid IS NULL AND i.uuid != v_root
       ORDER BY random()
-    ), t1 AS (
+      LIMIT ((p_depth * (p_depth + 1)) / 2)
+  )
+  SELECT array_agg(t.uuid) FROM targets t into v_pool_ids;
+
+  raise warning 'Pool IDs: %', v_pool_ids;
+
+  SELECT array_agg(d)
+  FROM shared.identity_details d
+  WHERE d.uuid = ANY( v_pool_ids )
+  INTO v_pool;
+
+  raise warning 'Pool: %', v_pool;
+
+  FOR idx IN 1..p_depth LOOP
+    raise warning 'itr %', idx;
+
+    WITH t1 AS (
       select
-        t.uuid, t.customer_uuid, t.region,
-        d.name, d.email, t.gender, t.note,
+        i.uuid, i.customer_uuid, i.region,
+        t.name, t.email, i.gender, i.note,
         v_current manager_uuid
-      from targets t
-        LEFT join shared.identity_details d on d.uuid = t.uuid
+      from unnest(v_pool) t
+        LEFT join shared.identity i on i.uuid = t.uuid
+      WHERE TRUE
+            AND i.uuid != v_root
+            AND i.uuid not in ((
+        select (u->>'uuid')::UUID
+        from jsonb_array_elements(v_update) u
+      ))
       LIMIT idx
     ), t2 as (
       select
@@ -319,4 +408,5 @@ $$
 LANGUAGE plpgsql
 STRICT
 SECURITY DEFINER;
+
 

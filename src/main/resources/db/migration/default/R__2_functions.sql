@@ -186,9 +186,6 @@ BEGIN
   -- OTHERWISE split up the data and route it accordingly
 
   select
---     jsonb_agg(d) filter (where d ->> 'region' = 'usa'),
---     jsonb_agg(d) filter (where d ->> 'region' = 'gbr'),
---     jsonb_agg(d) filter (where d ->> 'region' = 'aus')
     coalesce(jsonb_agg(d) filter (where d ->> 'region' = 'usa'), '[]'::JSONB),
     coalesce(jsonb_agg(d) filter (where d ->> 'region' = 'gbr'), '[]'::JSONB),
     coalesce(jsonb_agg(d) filter (where d ->> 'region' = 'aus'), '[]'::JSONB)
@@ -199,22 +196,17 @@ BEGIN
 
   select public.uuid_generate_v4() INTO v_insert_uuid;
 
---   IF v_usa IS NOT NULL THEN
-    insert into usa.trigger_cache(uuid, all_data, local_data)
-      select v_insert_uuid, p_data, v_usa;
-    raise warning 'Completed usa';
---   END IF;
---   IF v_gbr IS NOT NULL THEN
-    insert into gbr.trigger_cache(uuid, all_data, local_data)
-      select v_insert_uuid, p_data, v_gbr;
-    raise warning 'Completed gbr';
---   END IF;
---   IF v_aus IS NOT NULL THEN
-    insert into aus.trigger_cache(uuid, all_data, local_data)
-      select v_insert_uuid, p_data, v_aus;
-    raise warning 'Completed aus';
---   END IF;
+  insert into usa.trigger_cache(uuid, all_data, local_data)
+    select v_insert_uuid, p_data, v_usa;
+  raise warning 'Completed usa';
 
+  insert into gbr.trigger_cache(uuid, all_data, local_data)
+    select v_insert_uuid, p_data, v_gbr;
+  raise warning 'Completed gbr';
+
+  insert into aus.trigger_cache(uuid, all_data, local_data)
+    select v_insert_uuid, p_data, v_aus;
+  raise warning 'Completed aus';
 
   with data as (
       select
@@ -257,3 +249,80 @@ BEGIN
 END;
 $$
 LANGUAGE PLPGSQL;
+
+
+
+DROP FUNCTION IF EXISTS shared.search_hierarchy(p_target_uuid UUID, p_regions VARCHAR[], p_manager_out_of_region BOOLEAN);
+CREATE OR REPLACE FUNCTION shared.search_hierarchy(p_target_uuid UUID, p_regions VARCHAR[], p_manager_out_of_region BOOLEAN)
+  RETURNS TABLE (name VARCHAR, uuid UUID, depth INT, region CHAR(3), local_manager BOOLEAN, manager VARCHAR, manager_uuid UUID, manager_region CHAR(3), upline TEXT, path UUID[])
+AS
+$$
+DECLARE
+  v_usa UUID[];
+  v_gbr UUID[];
+  v_aus UUID[];
+BEGIN
+  WITH targets AS (
+      SELECT i.*
+      FROM shared.hierarchy t
+        INNER JOIN shared.hierarchy i ON i.path [t.depth] = t.uuid
+      WHERE t.uuid = (p_target_uuid) :: UUID
+  )
+  select
+    array_agg(t.uuid) filter (where t.region = 'usa') as usa,
+    array_agg(t.uuid) filter (where t.region = 'gbr') as gbr,
+    array_agg(t.uuid) filter (where t.region = 'aus') as aus
+  from targets t
+  into v_usa, v_gbr, v_aus;
+
+  raise warning 'Usa: %', v_usa;
+  raise warning 'Gbr: %', v_gbr;
+  raise warning 'Aus: %', v_aus;
+
+
+  return query
+  WITH targets AS (
+    select d.*
+    from usa.identity_details d where d.uuid = any (v_usa)
+    UNION
+    select d.*
+    from gbr.identity_details d where d.uuid = any (v_gbr)
+    UNION
+    select d.*
+    from aus.identity_details d where d.uuid = any (v_aus)
+  ), qualified AS (
+      select t.*, h.manager_uuid, h.path, h.depth
+      from targets t
+        LEFT JOIN shared.hierarchy h on h.uuid = t.uuid
+  ), upline AS (
+      select
+        c.uuid,
+        array_agg(q.name ORDER BY q.depth) as upline
+      from qualified c
+        LEFT JOIN qualified q ON c.path @> array[q.uuid]
+      WHERE c.manager_uuid IS NOT NULL
+      GROUP BY c.uuid
+  )
+  select
+    q.name,
+    q.uuid,
+    q.depth,
+    q.region,
+    m.region = q.region as local_manager,
+    m.name as manager,
+    m.uuid as manager_uuid,
+    m.region as manager_region,
+    array_to_string(u.upline, ' > ' ) upline,
+    q.path
+  from qualified q
+    LEFT JOIN qualified m on m.uuid = q.manager_uuid
+    LEFT JOIN upline u on u.uuid = q.uuid
+  WHERE TRUE
+        AND ( p_regions IS NULL OR q.region = ANY (p_regions) )
+        AND ( p_manager_out_of_region != TRUE OR m.region != q.region )
+  ORDER BY q.depth
+  ;
+
+END;
+$$
+LANGUAGE plpgsql;

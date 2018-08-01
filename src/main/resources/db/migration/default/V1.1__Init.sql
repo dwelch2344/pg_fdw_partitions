@@ -28,13 +28,20 @@ create table if not exists shared.identity_details (
   region CHAR(3) NOT NULL,
   name   VARCHAR NOT NULL,
   email  VARCHAR
-)
-  PARTITION BY LIST (region);
+) PARTITION BY LIST (region);
+
+
 create schema if not exists ${localNs};
 create table if not exists ${localNs}.identity_details
   partition of shared.identity_details for values in ('${localNs}');
-
-
+CREATE INDEX IF NOT EXISTS idx_uuid ON ${localNs}.identity_details (uuid);
+CREATE INDEX IF NOT EXISTS idx_customer_uuid ON ${localNs}.identity_details (customer_uuid);
+CREATE INDEX IF NOT EXISTS idx_region ON ${localNs}.identity_details (region);
+CREATE INDEX IF NOT EXISTS idx_region_customer_uuid ON ${localNs}.identity_details (region, customer_uuid);
+CREATE INDEX IF NOT EXISTS idx_name ON ${localNs}.identity_details (name);
+CREATE INDEX IF NOT EXISTS idx_name_customer_uuid ON ${localNs}.identity_details (name, customer_uuid);
+CREATE INDEX IF NOT EXISTS idx_email ON ${localNs}.identity_details (email);
+CREATE INDEX IF NOT EXISTS idx_email_customer_uuid ON ${localNs}.identity_details (email, customer_uuid);
 
 
 create table if not exists ${localNs}.trigger_cache (
