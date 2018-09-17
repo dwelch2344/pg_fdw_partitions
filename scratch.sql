@@ -1,18 +1,21 @@
--- select
---   shared.upsert_identity(
---       '7139f8aa-7f93-4657-83ad-b7d74a22159f',
---       'David Welch',
---       'usa',
---       'Dave is really nice'
---   ) as dave,
---   split_part(
---       shared.upsert_identity(
---           'd0c4d726-225c-426d-80d2-7406eb1c9739',
---           'Da Queen',
---           'gbr',
---           'Da queen is a powerhouse, but sort of an my' acquired taste'
---       ), ' | ', 4)
--- ;
+select * from shared.upsert(util.generate_data(10000), null); -- 11s
+select * from shared.upsert(util.generate_data(100000), null); -- 31s
+select * from shared.hierarchy;
+select * from util.create_manager_tree(15); -- 88ec65aa-6ca0-48a6-9075-331ceca50305
+
+
+
+with stats as (
+select
+  (select count(1) from usa.identity_details) as usa,
+  (select count(1) from gbr.identity_details) as gbr,
+  (select count(1) from aus.identity_details) as aus
+)
+select
+  s.*,
+  s.usa + s.gbr + s.aus as all_regions,
+  (select count(1) from shared.identity) as identity
+from stats s;
 
 
 select * from shared.identity;
@@ -20,18 +23,22 @@ select * from shared.identity_details;
 select * from usa.identity_details;
 
 
-
-select * from util.generate_identities(1, 1000);
-select * from util.generate_identities(1001, 10000);
-select * from util.generate_identities(10001, 11000);
-
-
--- select * util.generate_identities(1000, 5000);
--- select * util.generate_identities(5001, 6000);
--- select * from util.generate_identities(6001, 7000);
--- select * from util.generate_identities(7001, 8000);
--- select * from util.generate_identities(8001, 9000);
-
+with targets as (
+  select
+--     array_agg(uuid) uuids
+    i.uuid uuids
+  from shared.identity i
+  order by random()
+  limit 5
+)
+select *
+from shared.identity_details d
+--   cross join targets t
+where true
+--   and d.uuid = any( t.uuids )
+--   and d.uuid = '260549d9-a525-4d46-b74d-16351a83fdc6'::uuid
+  and d.uuid = ANY( select uuids from targets )
+;
 
 select * from util.create_manager_tree(15);
 
@@ -162,4 +169,86 @@ WITH RECURSIVE rel_tree AS (
 SELECT *
 FROM rel_tree t
 -- WHERE t.manager_uuid IS NOT NULL
-ORDER BY t.depth, t.path
+ORDER BY t.depth, t.path;
+
+
+
+
+
+
+
+
+
+
+
+WITH targets AS (
+    SELECT i.*
+    FROM shared.hierarchy t
+      --       LEFT JOIN shared.identity_details d on d.uuid = t.uuid
+      INNER JOIN shared.hierarchy i ON i.path [t.depth] = t.uuid
+    WHERE t.uuid = (:target_uuid) :: UUID
+), grouping AS (
+    select
+      array_agg(t.uuid) filter (where t.region = 'usa') as usa,
+      array_agg(t.uuid) filter (where t.region = 'gbr') as gbr,
+      array_agg(t.uuid) filter (where t.region = 'aus') as aus
+    from targets t
+), usas as (
+    select usa.*
+    from grouping g
+      left join usa.identity_details usa on usa.uuid = any (g.usa)
+), gbrs as (
+    select gbr.*
+    from grouping g
+      left join gbr.identity_details gbr on gbr.uuid = any (g.gbr)
+)
+select * from usas
+union
+select * from gbrs
+;
+
+
+
+
+
+
+select * from shared.search_hierarchy('88ec65aa-6ca0-48a6-9075-331ceca50305'::UUID, null, null);
+
+select * from shared.search_hierarchy('88ec65aa-6ca0-48a6-9075-331ceca50305'::UUID, array['usa', 'aus'], null);
+
+select * from shared.search_hierarchy('88ec65aa-6ca0-48a6-9075-331ceca50305'::UUID, array['usa', 'aus'], true);
+
+select *
+from shared.search_hierarchy('88ec65aa-6ca0-48a6-9075-331ceca50305'::UUID, array['usa', 'aus'], true) sh
+where sh.name ilike any( array['%Ingaber%', '%SHANON%'])
+;
+
+
+-- bad
+with targets as (
+    select
+      array_agg(uuid) uuids
+    from shared.identity i
+    order by random()
+    limit 5
+)
+select *
+from shared.identity_details d
+  cross join targets t
+where true
+      and d.uuid = any( t.uuids );
+
+-- Good
+with targets as (
+    select
+      i.uuid uuids
+    from shared.identity i
+    order by random()
+    limit 5
+)
+select *
+from shared.identity_details d
+where true
+      and d.uuid = ANY( select uuids from targets );
+
+select * from shared.identity_details d where d.uuid = '696d77db-2516-4030-b00e-21a32a6914c1'::uuid;

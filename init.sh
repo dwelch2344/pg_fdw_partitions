@@ -3,13 +3,13 @@
 set -e
 
 
-if test $# -lt 2
-then
-    docker-compose down
-    docker-compose up -d
-else
-    echo "Not messing with docker since environment was specified"
-fi
+#if test $# -lt 2
+#then
+#    docker-compose down
+#    docker-compose up -d
+#else
+#    echo "Not messing with docker since environment was specified"
+#fi
 
 sleep 1.5
 
